@@ -21,6 +21,7 @@ import json
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+import shutil
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -489,6 +490,17 @@ class ModelingPipeline:
     
     def run_complete_pipeline(self, data_path: str, n_trials: int = 30) -> Dict[str, Any]:
         """Run the complete modeling pipeline."""
+        # Clean previous artifacts to avoid mixing outputs across runs
+        artifacts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'artifacts')
+        artifacts_dir = os.path.abspath(artifacts_dir)
+        try:
+            if os.path.isdir(artifacts_dir):
+                shutil.rmtree(artifacts_dir)
+            os.makedirs(artifacts_dir, exist_ok=True)
+        except Exception:
+            # Proceed even if cleanup fails; downstream saves will still work
+            pass
+
         with self.tracker.start_run(run_name="Complete Pipeline Run"):
             X, y = self.load_and_prepare_data(data_path)
             
@@ -557,7 +569,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Run the comprehensive car price prediction modeling pipeline.")
-    parser.add_argument("--data", type=str, default="artifacts/clean_data.csv",
+    parser.add_argument("--data", type=str, default="data/clean_data.csv",
                         help="Path to the clean data CSV file.")
     parser.add_argument("--cv-folds", type=int, default=3,
                         help="Number of folds for time series cross-validation.")

@@ -19,7 +19,12 @@ class ExperimentTracker:
         self._setup_experiment()
     
     def _setup_experiment(self):
-        """Initialize MLFlow experiment."""
+        """Initialize MLFlow experiment and ensure local tracking under project root mlruns."""
+        # Resolve project root from this file: src/price_model/ -> src -> project root
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        local_mlruns_path = os.path.join(project_root, 'mlruns')
+        # Use file URI to avoid ambiguity about working directory
+        mlflow.set_tracking_uri(f"file://{local_mlruns_path}")
         mlflow.set_experiment(self.experiment_name)
     
     def start_run(self, run_name: Optional[str] = None) -> mlflow.ActiveRun:

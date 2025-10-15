@@ -41,13 +41,11 @@ class NumericSanitizer:
             if col in self.col_configs:
                 cfg = self.col_configs[col]
                 
-                # Handle outliers
                 if cfg.min_val is not None:
                     X_clean.loc[X_clean[col] < cfg.min_val, col] = np.nan
                 if cfg.max_val is not None:
                     X_clean.loc[X_clean[col] > cfg.max_val, col] = np.nan
                 
-                # Replace missing values
                 if cfg.replace_with == 'median' and col in self.stats_:
                     X_clean[col] = X_clean[col].fillna(self.stats_[col]['median'])
                 elif cfg.replace_with == 'mean' and col in self.stats_:

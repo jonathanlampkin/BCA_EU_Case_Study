@@ -7,32 +7,39 @@ import re
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+from unidecode import unidecode
 
-from .transformers import DateAndMileage, MakeModelComposite, DropVehicleId, DropInvalidYearIntroduced, CleanSaleDate, CleanDoorNumber
-from .num_sanitize import NumericSanitizer, ColCfg
+from src.price_model.transformers import (
+    DateAndMileage,
+    MakeModelComposite,
+    DropVehicleId,
+    YearChronologyGuard,
+    CleanSaleDate,
+    CleanDoorNumber,
+)
+from src.price_model.num_sanitize import NumericSanitizer, ColCfg
 
 
 @dataclass
 class DomainConfig:
-    """Single source of domain knowledge and numeric sanitization settings."""
-    luxury_brands: List[str] = field(default_factory=lambda: [
-        "BMW", "Mercedes", "Audi", "Lexus", "Infiniti", "Acura"
-    ])
-    reliable_brands: List[str] = field(default_factory=lambda: [
-        "Toyota", "Honda", "Mazda", "Subaru"
-    ])
+    """User config settings to apply domain and modeling knowledge."""
+    # luxury_brands: List[str] = field(default_factory=lambda: [
+    #     "BMW", "Mercedes", "Audi", "Lexus", "Infiniti", "Acura"
+    # ])
+
 
     numeric_cfg: Dict[str, ColCfg] = field(default_factory=lambda: {
-        "kilometers": ColCfg(min_val=0, max_val=500000, replace_with='median'),
-        "cubeCapacity": ColCfg(min_val=300, max_val=8000, replace_with='median'),
-        "powerKW": ColCfg(min_val=20, max_val=1000, replace_with='median'),
-        "cylinder": ColCfg(min_val=2, max_val=16, replace_with='median'),
-        "vehicle_age_years": ColCfg(min_val=0, max_val=50, replace_with='median'),
-        "km_per_year": ColCfg(min_val=0, max_val=100000, replace_with='median'),
-        "years_since_intro_at_sale": ColCfg(min_val=0, max_val=20, replace_with='median'),
+        "kilometers": ColCfg(min_val=0, max_val=None, replace_with="median"),
+        "cubeCapacity": ColCfg(min_val=None, max_val=None, replace_with="median"),
+        "powerKW": ColCfg(min_val=0, max_val=None, replace_with="median"),
+        "cylinder": ColCfg(min_val=2, max_val=16, replace_with="median"),
+        "vehicle_age_years": ColCfg(min_val=0, max_val=None, replace_with="median"),
+        "km_per_year": ColCfg(min_val=0, max_val=None, replace_with="median"),
+        "years_since_intro_at_sale": ColCfg(min_val=0, max_val=None, replace_with="median"),
     })
 
-    # Categorical configuration per column (all options):
+
+    # Categorical column transformation configuration options:
     # {
     #   "<col>": {
     #       "ordinal": True|False,                    # if True, use ordinal_mapping and drop original
@@ -44,35 +51,29 @@ class DomainConfig:
     #   }
     # }
     categorical_cfg: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-        # Use OHE for color instead of binary encoding
-        "colour": {"top_cum_q": 1.0},
-        # doorNumber: keep as integer (no OHE)
-        # We achieve this by not listing doorNumber here
-        "aestheticGrade": {"ordinal": True, "ordinal_mapping": {"Very Bad": 0, "Bad": 1, "Medium": 2, "Good": 3, "Very Good": 4}},
-        "mechanicalGrade": {"ordinal": True, "ordinal_mapping": {"Very Bad": 0, "Bad": 1, "Medium": 2, "Good": 3, "Very Good": 4}},
-        "fuel": {"top_cum_q": 1.0},
+        "colour": {"top_cum_q": 1.0}, # OHE with no bin into "Other"; hence top_cum_q = 1.0
+        "aestheticGrade": {"ordinal": True, "ordinal_mapping": {"Very Bad": 1, "Bad": 2, "Medium": 3, "Good": 4, "Very Good": 5}},
+        "mechanicalGrade": {"ordinal": True, "ordinal_mapping": {"Very Bad": 1, "Bad": 2, "Medium": 3, "Good": 4, "Very Good": 5}},
+        "fuel": {"top_cum_q": 1.0}, 
         "transmission": {"top_cum_q": 1.0},
         "type": {"top_cum_q": 1.0},
-        "make_model": {"top_cum_q": 0.70, "high_card_threshold": 50}
+        "make_model": {"top_cum_q": 0.70, "high_card_threshold": 50} # Only keeping top 70% of most frequent make/model combinations to avoid cardinality explosion, falls back to target encoding if cardinality exceeds 50.
     })
-    # z-score normalization of numeric features (prefer in model pipeline; off here per request)
+    # z-score normalization of numeric features (left to False so that preprocessed data is still in the same scale as the original data)
     zscore_normalize: bool = False
 
 
 class Preprocessor(BaseEstimator, TransformerMixin):
     """
-    Unified, domain-driven preprocessing:
-    - Minimal feature engineering (DateAndMileage)
-    - Numeric sanitization with ColCfg per column (fit on train; deterministic on test)
-    - Final guards: dedupe, impute residual NAs, drop all-NA and zero-variance columns
-
-    Fit/transform contract enables consistent train/test behavior.
+    Preprocesses data using the DomainConfig class above with logical guardrails such as dedepulication, imputation, dropping all-NA or zero-variance columns etc.
+    We use classes to clean the data so that we can use class methods to fit preprocessing to the train then transform the test to avoid data leakage.
     """
 
     def __init__(self, domain: Optional[DomainConfig] = None):
         self.domain = domain or DomainConfig()
         self._num_sanitizer: Optional[NumericSanitizer] = None
         self._norm_stats: Dict[str, Dict[str, float]] = {}
+        # removed once-only logging flag for dropped invalid rows
 
     def fit(self, X: pd.DataFrame, y=None):
         X = self._apply_stateless_transforms(X)
@@ -107,38 +108,46 @@ class Preprocessor(BaseEstimator, TransformerMixin):
         return self.fit(X, y).transform(X)
 
     def _apply_stateless_transforms(self, X: pd.DataFrame) -> pd.DataFrame:
-        # Clean saleDate first (format, drop future dates)
         X = CleanSaleDate().fit_transform(X)
-        # Clean doorNumber to integer
+        X = X.drop_duplicates()
         X = CleanDoorNumber().fit_transform(X)
-        # Drop invalid rows (data quality issues)
-        X = DropInvalidYearIntroduced().fit_transform(X)
-        # Only replace 0/<=0 cubeCapacity with NaN; no unit conversion here
+        before = len(X)
+        X = YearChronologyGuard().fit_transform(X)
+        dropped = before - len(X)
+        if dropped > 0:
+            print(f"Dropped {dropped} rows for invalid chronology (yearIntroduced > sale_year)")
         if "cubeCapacity" in X.columns:
             cc = pd.to_numeric(X["cubeCapacity"], errors="coerce")
             cc = cc.where(cc > 0)
             X["cubeCapacity"] = cc
         X = DateAndMileage().fit_transform(X)
-        # Upstream validation for yearIntroduced and years_since_intro_at_sale
-        if "yearIntroduced" in X.columns and "sale_year" in X.columns:
-            yintro = pd.to_numeric(X["yearIntroduced"], errors="coerce")
-            ys = pd.to_numeric(X["sale_year"], errors="coerce")
-            invalid = (yintro > ys) | (yintro < 1900)
-            n_invalid = int(invalid.sum()) if invalid.notna().any() else 0
-            if n_invalid > 0:
-                print(f"ℹ️  yearIntroduced: {n_invalid} invalid rows (future or <1900) set to NaN before deriving years_since_intro_at_sale.")
-            yintro = yintro.mask(invalid)
-            X["years_since_intro_at_sale"] = (ys - yintro).astype(float)
+        # Year chronology and derived fields are handled in YearChronologyGuard
+        # Build composite then drop original make/model to avoid duplicate OHE
         X = MakeModelComposite().fit_transform(X)
+        if 'make' in X.columns:
+            X = X.drop(columns=['make'])
+        if 'model' in X.columns:
+            X = X.drop(columns=['model'])
         X = DropVehicleId().fit_transform(X)
+        # Clean categorical text to avoid excess cardinality
+        obj_cols = X.select_dtypes(include=["object", "category"]).columns
+        if len(obj_cols) > 0:
+            def _clean_ascii(s):
+                if pd.isna(s):
+                    return s
+                s = unidecode(str(s))
+                s = s.lower()
+                s = re.sub(r"[^a-z0-9 ]+", " ", s)
+                return re.sub(r"\\s+", " ", s).strip()
+            X[obj_cols] = X[obj_cols].apply(lambda col: col.map(_clean_ascii))
         return X
 
 
     def _apply_categorical_config(self, X: pd.DataFrame) -> pd.DataFrame:
         cat_cfg = self.domain.categorical_cfg or {}
         # Exclude date columns from categorical processing
-        date_cols = ['saleDate', 'registrationDate']  # Add other date columns as needed
-        cat_cols = [col for col in X.select_dtypes(include=['object']).columns.tolist() 
+        date_cols = ['saleDate', 'registrationDate']
+        cat_cols = [col for col in X.select_dtypes(include=['object', 'category']).columns.tolist() 
                    if col not in date_cols]
         for col in cat_cols:
             if col == "doorNumber":
@@ -158,7 +167,7 @@ class Preprocessor(BaseEstimator, TransformerMixin):
                 cardinality = int(s.nunique(dropna=True))
                 high_card_threshold = int(cfg.get("high_card_threshold", 50))
                 if cardinality > high_card_threshold and 'targetPrice' in X.columns and 'saleDate' in X.columns:
-                    print(f"ℹ️  {col}: cardinality={cardinality} > {high_card_threshold}. Falling back to time-series target encoding (no leakage). top_q={cfg.get('top_cum_q', 1.0)}")
+                    print(f"{col}: cardinality={cardinality} > {high_card_threshold}. Using time-series target encoding (no leakage). top_q={cfg.get('top_cum_q', 1.0)}")
                     X[f"{col}__te"] = self._timeseries_target_encode(X, col, y_col='targetPrice', date_col='saleDate')
                     processed = True
                 else:
@@ -169,8 +178,11 @@ class Preprocessor(BaseEstimator, TransformerMixin):
                         levels = list(vc.index[cum <= float(top_q)])
                         if not levels and len(vc) > 0:
                             levels = [vc.index[0]]
-                        keep_levels = levels[:-1] if len(levels) > 1 else levels
-                        print(f"ℹ️  {col}: OHE-top-q={top_q} → keeping {len(keep_levels)} of {cardinality} (k-1 applied).")
+                        # Drop one baseline to avoid perfect multicollinearity (k-1). Prefer first non-NaN level.
+                        non_nan_levels = [lvl for lvl in vc.index if not (isinstance(lvl, float) and np.isnan(lvl))]
+                        baseline = non_nan_levels[0] if non_nan_levels else vc.index[0]
+                        keep_levels = [lvl for lvl in levels if lvl != baseline]
+                        print(f"{col}: OHE top_q={top_q} -> kept {len(keep_levels)} of {cardinality} (k-1)")
                         for lvl in keep_levels:
                             col_name = f"{col}__{lvl}"
                             X[col_name] = (s == lvl).astype(int)
@@ -181,22 +193,33 @@ class Preprocessor(BaseEstimator, TransformerMixin):
 
     def _timeseries_target_encode(self, X: pd.DataFrame, col: str, y_col: str = 'targetPrice', date_col: str = 'saleDate') -> pd.Series:
         df = X[[col, y_col, date_col]].copy()
-        # Handle date objects (already converted by CleanSaleDate)
         if df[date_col].dtype == 'object' and hasattr(df[date_col].iloc[0], 'year'):
-            # Already a date object, convert to datetime for sorting
             df[date_col] = pd.to_datetime(df[date_col])
         else:
             df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
         df = df.sort_values(date_col)
-        global_mean = df[y_col].mean()
+        # Compute cumulative (past-only) means to avoid leakage
         grp = df.groupby(col, sort=False)
-        cum_count = grp.cumcount()
+        counts = grp.cumcount() 
         csum = grp[y_col].cumsum() - df[y_col]
-        ccount = cum_count
-        prior = 100.0
-        enc = (csum + prior * global_mean) / (ccount + prior)
-        enc.index = df.index
-        enc = enc.sort_index().fillna(global_mean)
+        ccount = counts
+        # Overall prior using only rows strictly before current: sum/count of observed y up to previous row
+        y_nonnull = df[y_col].copy()
+        y_nonnull_mask = y_nonnull.notna().astype(int)
+        overall_sum_prior = y_nonnull.fillna(0).cumsum() - y_nonnull.fillna(0)
+        overall_cnt_prior = y_nonnull_mask.cumsum() - y_nonnull_mask
+        prior = np.where(overall_cnt_prior > 0, overall_sum_prior / overall_cnt_prior, 0.0)
+        # Smoothing towards overall prior with small weight alpha
+        alpha = 10.0
+        enc = np.empty(len(df), dtype=float)
+        # First occurrence (no past) -> fixed prior 0.0
+        mask_first = (ccount == 0)
+        enc[mask_first] = 0.0
+        # Subsequent occurrences -> smoothed past mean
+        mask_rest = ~mask_first
+        enc[mask_rest] = (csum[mask_rest] + alpha * prior[mask_rest]) / (ccount[mask_rest] + alpha)
+        enc = pd.Series(enc, index=df.index)
+        enc = enc.sort_index()
         return enc
 
     def _finalize(self, X: pd.DataFrame) -> pd.DataFrame:
@@ -251,9 +274,7 @@ def main():
     # Apply preprocessing
     preprocessor = Preprocessor(DomainConfig())
     df_processed = preprocessor.fit_transform(df)
-    
     print(f"Processed data shape: {df_processed.shape}")
-    print(f"Processed columns: {list(df_processed.columns)}")
     
     # Save processed data
     df_processed.to_csv(args.output_path, index=False)

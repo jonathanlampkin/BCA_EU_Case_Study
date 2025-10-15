@@ -3,6 +3,9 @@ Feature importance analysis and SHAP value computation for model interpretabilit
 """
 import numpy as np
 import pandas as pd
+import matplotlib
+# Use a non-interactive backend to avoid Tkinter/threading issues in headless/multiprocessing runs
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import shap
@@ -44,7 +47,14 @@ class FeatureAnalyzer:
         return importance_dict
     
     def compute_shap_values(self, X: pd.DataFrame, sample_size: int = 1000) -> np.ndarray:
-        """Compute SHAP values for model interpretability."""
+        """Compute SHAP values for model interpretability.
+
+        Performance safeguards:
+        - Subsample to sample_size (default 1000)
+        - Prefer TreeExplainer for tree models
+        - Use small, independent masker/background
+        - Disable additivity check for speed
+        """
         print("Computing SHAP values...")
         
         # Sample data for faster computation
@@ -54,19 +64,26 @@ class FeatureAnalyzer:
             X_sample = X
         
         # Create SHAP explainer based on model type
-        if hasattr(self.model, 'predict_proba'):
-            # For models with predict_proba
-            self.shap_explainer = shap.Explainer(self.model)
+        model_name = str(type(self.model)).lower()
+        if ('lightgbm' in model_name) or ('xgboost' in model_name) or ('randomforest' in model_name):
+            # Tree models: use fast TreeExplainer with small independent masker
+            try:
+                masker = shap.maskers.Independent(shap.sample(X_sample, min(500, len(X_sample)), random_state=42))
+            except Exception:
+                masker = shap.maskers.Independent(X_sample.iloc[: min(500, len(X_sample))])
+            self.shap_explainer = shap.TreeExplainer(self.model, data=masker, feature_perturbation="interventional")
+            # Compute SHAP values; disable additivity check for speed
+            try:
+                self.shap_values = self.shap_explainer.shap_values(X_sample, check_additivity=False)
+            except TypeError:
+                # Older SHAP versions may not support check_additivity here
+                self.shap_values = self.shap_explainer.shap_values(X_sample)
         else:
-            # For tree-based models, use TreeExplainer
-            if 'lightgbm' in str(type(self.model)).lower() or 'xgboost' in str(type(self.model)).lower():
-                self.shap_explainer = shap.TreeExplainer(self.model)
-            else:
-                # For other models, use KernelExplainer
-                self.shap_explainer = shap.KernelExplainer(self.model.predict, X_sample.iloc[:100])
-        
-        # Compute SHAP values
-        self.shap_values = self.shap_explainer.shap_values(X_sample)
+            # Fallback: KernelExplainer (slow). Use a very small background.
+            background = X_sample.iloc[: min(100, len(X_sample))]
+            self.shap_explainer = shap.KernelExplainer(self.model.predict, background)
+            # KernelExplainer returns list/array depending on SHAP version; keep as-is
+            self.shap_values = self.shap_explainer.shap_values(X_sample)
         
         return self.shap_values
     

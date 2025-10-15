@@ -1,5 +1,7 @@
 # Car Price Prediction System
 
+> Start here: See the full guide and instructions in [docs/Project_Documentation.md](docs/Project_Documentation.md).
+
 A machine learning pipeline for predicting car prices using time series data with proper cross-validation and no data leakage.
 
 ## Features
@@ -9,7 +11,7 @@ A machine learning pipeline for predicting car prices using time series data wit
 - **Multicollinearity Pruning**: Automated feature selection using correlation and VIF
 - **Model Comparison**: Multiple algorithms with ensemble methods
 - **Hyperparameter Optimization**: Bayesian optimization with Optuna
-- **Experiment Tracking**: MLFlow integration for model versioning
+- **Experiment Tracking**: MLflow integration; runs logged under project root `mlruns/`
 - **REST API**: FastAPI service for real-time predictions
 - **Production Ready**: Docker deployment and monitoring
 
@@ -25,6 +27,10 @@ make full
 # Start API service
 make serve
 ```
+
+Notes:
+- Artifacts under `artifacts/` are regenerated; previous run outputs are cleaned at pipeline start.
+- MLflow logs are persisted locally to the repository’s root `mlruns/` directory.
 
 ## API Usage
 
@@ -74,12 +80,13 @@ curl -X POST "http://localhost:8000/predict/batch" \
 ```
 src/price_model/
 ├── preprocessor.py              # Data preprocessing and feature engineering
-├── multicollinearity_pruner.py  # Feature selection and VIF analysis
-├── modeling_pipeline.py         # Main ML pipeline with time series CV
-├── experiment_tracker.py        # MLFlow integration
-├── model_service.py            # FastAPI service
-├── model_comparison.py         # Model evaluation framework
-└── hyperparameter_optimization.py # Bayesian optimization
+├── advanced_feature_selector.py # Correlation/VIF-driven selection and summaries
+├── feature_analyzer.py          # SHAP/importance plots and reporting
+├── transformers.py              # Utilities for transforms
+├── num_sanitize.py              # Numeric sanitization helpers
+├── modeling_pipeline.py         # End-to-end model pipeline (CV, optimize, train, save)
+├── experiment_tracker.py        # MLflow integration (logs → root mlruns/)
+└── model_service.py             # FastAPI service for predictions
 ```
 
 ## Development
@@ -123,9 +130,9 @@ make deploy
 
 ## Documentation
 
+- **Project Guide (Start Here)**: [docs/Project_Documentation.md](docs/Project_Documentation.md)
 - **API Documentation**: http://localhost:8000/docs
-- **MLFlow UI**: http://localhost:5000
-- **Codebase Guide**: [CODEBASE_GUIDE.md](CODEBASE_GUIDE.md)
+- **MLflow UI**: http://localhost:5000
 
 ## Requirements
 

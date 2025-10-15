@@ -1,5 +1,5 @@
 """
-Minimal transformers for the preprocessor.
+Column Transformations for the preprocessor.
 """
 import pandas as pd
 import numpy as np
@@ -17,13 +17,13 @@ class DateAndMileage(BaseEstimator, TransformerMixin):
         
         # Convert saleDate to datetime
         if 'saleDate' in X.columns:
-            X['saleDate'] = pd.to_datetime(X['saleDate'], errors='coerce')
+            X['saleDate'] = pd.to_datetime(X['saleDate'], errors='coerce', dayfirst=True)
             X['sale_year'] = X['saleDate'].dt.year
             X['sale_month'] = X['saleDate'].dt.month
         
         # Calculate vehicle age
         if 'registrationDate' in X.columns and 'saleDate' in X.columns:
-            X['registrationDate'] = pd.to_datetime(X['registrationDate'], errors='coerce')
+            X['registrationDate'] = pd.to_datetime(X['registrationDate'], errors='coerce', dayfirst=True)
             X['vehicle_age_years'] = (X['saleDate'] - X['registrationDate']).dt.days / 365.25
         
         # Calculate km per year
@@ -47,12 +47,6 @@ class MakeModelComposite(BaseEstimator, TransformerMixin):
         
         if 'make' in X.columns and 'model' in X.columns:
             X['make_model'] = X['make'] + '_' + X['model']
-            
-            # Simple target encoding (mean target by make_model)
-            if hasattr(self, 'target_means_'):
-                X['make_model__te'] = X['make_model'].map(self.target_means_).fillna(0)
-            else:
-                X['make_model__te'] = 0
         
         return X
 
@@ -68,8 +62,14 @@ class DropVehicleId(BaseEstimator, TransformerMixin):
             X = X.drop(columns=['vehicleID'])
         return X
 
-class DropInvalidYearIntroduced(BaseEstimator, TransformerMixin):
-    """Drop rows with invalid yearIntroduced."""
+class YearChronologyGuard(BaseEstimator, TransformerMixin):
+    """Ensure chronological consistency and derive years_since_intro_at_sale.
+
+    - Coerce saleDate to datetime and create sale_year
+    - Drop rows with yearIntroduced > sale_year
+    - Treat implausible yearIntroduced (<1900) as missing
+    - Derive years_since_intro_at_sale = sale_year - yearIntroduced (with NaNs handled)
+    """
     
     def fit(self, X, y=None):
         return self
@@ -77,15 +77,24 @@ class DropInvalidYearIntroduced(BaseEstimator, TransformerMixin):
     def transform(self, X):
         X = X.copy()
         
-        if 'yearIntroduced' in X.columns and 'saleDate' in X.columns:
-            X['saleDate'] = pd.to_datetime(X['saleDate'], errors='coerce')
+        if 'saleDate' in X.columns:
+            X['saleDate'] = pd.to_datetime(X['saleDate'], errors='coerce', dayfirst=True)
             X['sale_year'] = X['saleDate'].dt.year
-            
-            # Drop rows where yearIntroduced > sale_year
-            invalid_mask = X['yearIntroduced'] > X['sale_year']
-            if invalid_mask.any():
-                print(f"Dropping {invalid_mask.sum()} rows with invalid yearIntroduced")
-                X = X[~invalid_mask]
+        
+        if 'yearIntroduced' in X.columns and 'sale_year' in X.columns:
+            yintro = pd.to_numeric(X['yearIntroduced'], errors='coerce')
+            sale_year = pd.to_numeric(X['sale_year'], errors='coerce')
+            # Drop future-introduced rows
+            invalid_future = yintro > sale_year
+            if invalid_future.any():
+                X = X.loc[~invalid_future].copy()
+                yintro = yintro.loc[X.index]
+                sale_year = sale_year.loc[X.index]
+            # Mask implausible historical years
+            yintro = yintro.mask(yintro < 1900)
+            X['yearIntroduced'] = yintro
+            # Derive years since intro
+            X['years_since_intro_at_sale'] = (sale_year - yintro).astype(float)
         
         return X
 
@@ -99,7 +108,7 @@ class CleanSaleDate(BaseEstimator, TransformerMixin):
         X = X.copy()
         
         if 'saleDate' in X.columns:
-            X['saleDate'] = pd.to_datetime(X['saleDate'], errors='coerce')
+            X['saleDate'] = pd.to_datetime(X['saleDate'], errors='coerce', dayfirst=True)
         
         return X
 
