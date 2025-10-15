@@ -84,32 +84,53 @@ class ModelService:
     def load_model(self):
         """Load the trained model, preprocessor, and transformers."""
         try:
-            # Load model with fallback to improved name for backward compatibility
-            if os.path.exists(self.model_path):
-                self.model = joblib.load(self.model_path)
-                print(f"ModelService: Model loaded from {self.model_path}")
-            else:
-                fallback_model = "artifacts/improved_final_model.joblib"
-                if os.path.exists(fallback_model):
-                    self.model = joblib.load(fallback_model)
-                    self.model_path = fallback_model
-                    print(f"ModelService: Model loaded from {fallback_model}")
-                else:
-                    raise FileNotFoundError(f"Model file not found: {self.model_path}")
+            # Load model with robust fallbacks (handle env pointing to either variant)
+            model_candidates = []
+            # 1) Requested path
+            model_candidates.append(self.model_path)
+            # 2) Swap variant
+            if 'improved_final_model.joblib' in self.model_path:
+                model_candidates.append(self.model_path.replace('improved_final_model.joblib', 'final_model.joblib'))
+            elif 'final_model.joblib' in self.model_path:
+                model_candidates.append(self.model_path.replace('final_model.joblib', 'improved_final_model.joblib'))
+            # 3) Canonical paths
+            model_candidates.extend([
+                'artifacts/final_model.joblib',
+                'artifacts/improved_final_model.joblib'
+            ])
+            self.model = None
+            for candidate in model_candidates:
+                if os.path.exists(candidate):
+                    self.model = joblib.load(candidate)
+                    self.model_path = candidate
+                    print(f"ModelService: Model loaded from {candidate}")
+                    break
+            if self.model is None:
+                raise FileNotFoundError(f"Model file not found: tried {model_candidates}")
             
-            # Load preprocessor with fallback to improved name for backward compatibility
-            if os.path.exists(self.preprocessor_path):
-                self.preprocessor = joblib.load(self.preprocessor_path)
-                print(f"ModelService: Preprocessor loaded from {self.preprocessor_path}")
-            else:
-                fallback_pre = "artifacts/improved_preprocessor.joblib"
-                if os.path.exists(fallback_pre):
-                    self.preprocessor = joblib.load(fallback_pre)
-                    self.preprocessor_path = fallback_pre
-                    print(f"ModelService: Preprocessor loaded from {fallback_pre}")
-                else:
-                    print("ModelService: Preprocessor not found, using basic preprocessing")
-                    self.preprocessor = None
+            # Load preprocessor with robust fallbacks
+            pre_candidates = []
+            pre_candidates.append(self.preprocessor_path)
+            if 'improved_preprocessor.joblib' in self.preprocessor_path:
+                pre_candidates.append(self.preprocessor_path.replace('improved_preprocessor.joblib', 'preprocessor.joblib'))
+            elif 'preprocessor.joblib' in self.preprocessor_path:
+                pre_candidates.append(self.preprocessor_path.replace('preprocessor.joblib', 'improved_preprocessor.joblib'))
+            pre_candidates.extend([
+                'artifacts/preprocessor.joblib',
+                'artifacts/improved_preprocessor.joblib'
+            ])
+            self.preprocessor = None
+            for candidate in pre_candidates:
+                if os.path.exists(candidate):
+                    try:
+                        self.preprocessor = joblib.load(candidate)
+                        self.preprocessor_path = candidate
+                        print(f"ModelService: Preprocessor loaded from {candidate}")
+                        break
+                    except Exception:
+                        continue
+            if self.preprocessor is None:
+                print("ModelService: Preprocessor not found, using basic preprocessing")
             
             # Load transformers
             if os.path.exists(self.transformers_path):
