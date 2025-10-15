@@ -1,0 +1,43 @@
+# Azure Container Instance deployment configuration
+apiVersion: 2021-07-01
+location: eastus
+name: car-price-prediction-api
+properties:
+  containers:
+  - name: car-price-prediction
+    properties:
+      image: your-registry.azurecr.io/car-price-prediction:latest
+      resources:
+        requests:
+          cpu: 1.0
+          memoryInGb: 2.0
+      ports:
+      - port: 8000
+        protocol: TCP
+      environmentVariables:
+      - name: MODEL_PATH
+        value: "/app/artifacts/improved_final_model.joblib"
+      - name: PREPROCESSOR_PATH
+        value: "/app/artifacts/improved_preprocessor.joblib"
+      - name: AZURE_STORAGE_CONNECTION_STRING
+        secureValue: "your-storage-connection-string"
+      volumeMounts:
+      - name: model-storage
+        mountPath: /app/artifacts
+  osType: Linux
+  restartPolicy: Always
+  ipAddress:
+    type: Public
+    ports:
+    - protocol: TCP
+      port: 8000
+    dnsNameLabel: car-price-prediction-api
+  volumes:
+  - name: model-storage
+    azureFile:
+      shareName: model-artifacts
+      storageAccountName: yourstorageaccount
+      storageAccountKey: your-storage-key
+tags:
+  environment: production
+  application: car-price-prediction

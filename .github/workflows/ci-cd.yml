@@ -1,0 +1,123 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKER_IMAGE: car-price-prediction-api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+    
+    - name: Lint with flake8
+      run: |
+        flake8 src/ --max-line-length=100 --ignore=E203,W503
+        black --check src/
+        isort --check-only src/
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v --tb=short
+    
+    - name: Test preprocessing
+      run: |
+        python src/price_model/preprocessor.py --input_path data/EUDS_CaseStudy_Pricing.csv --output_path test_clean_data.csv
+        python -c "import pandas as pd; df = pd.read_csv('test_clean_data.csv'); print(f'Preprocessed data shape: {df.shape}'); print(f'All numeric except saleDate: {all(pd.api.types.is_numeric_dtype(df[col]) for col in df.columns if col != \"saleDate\")}')"
+    
+    - name: Test model training (quick)
+      run: |
+        python src/price_model/modeling_pipeline.py --data test_clean_data.csv --cv-folds 2 --n-trials 5
+        python -c "import joblib; model = joblib.load('artifacts/final_model.joblib'); print(f'Model type: {type(model).__name__}')"
+    
+    - name: Test API service
+      run: |
+        python src/price_model/model_service.py &
+        sleep 10
+        curl -f http://localhost:8000/health
+        curl -X POST "http://localhost:8000/predict" \
+             -H "Content-Type: application/json" \
+             -d '{"make_model__te": 5000, "mechanicalGrade_ordinal": 3, "kilometers": 45000, "vehicle_age_years": 3, "cubeCapacity": 1200, "fuel__Diesel": 0, "years_since_intro_at_sale": 5, "aestheticGrade_ordinal": 3, "transmission__Manual": 1, "cylinder": 4, "make__MERCEDES-BENZ": 0, "make__VOLVO": 0, "make__AUDI": 0, "make__VOLKSWAGEN": 0, "colour__White": 0, "sale_year": 2024, "make__TOYOTA": 0, "colour__Black": 0, "colour__Green": 0, "colour__Blue": 1, "make__SEAT": 0}'
+        pkill -f "python.*model_service"
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Deploy to Azure Container Instances
+      run: |
+        echo "Deployment to Azure would go here"
+        echo "This would typically use Azure CLI or ARM templates"
+        echo "For now, we'll just log the deployment step"
+        echo "Docker image: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}"
+
+  monitor:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Setup monitoring
+      run: |
+        echo "Setting up Prometheus/Grafana monitoring"
+        echo "This would typically involve:"
+        echo "1. Deploying Prometheus to scrape metrics"
+        echo "2. Setting up Grafana dashboards"
+        echo "3. Configuring alerting rules"
+        echo "4. Setting up log aggregation"
