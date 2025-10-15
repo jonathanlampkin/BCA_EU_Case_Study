@@ -31,8 +31,8 @@ FROM python:3.11-slim as production
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    MODEL_PATH="/app/artifacts/improved_final_model.joblib" \
-    PREPROCESSOR_PATH="/app/artifacts/improved_preprocessor.joblib"
+    MODEL_PATH="/app/artifacts/final_model.joblib" \
+    PREPROCESSOR_PATH="/app/artifacts/preprocessor.joblib"
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

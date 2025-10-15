@@ -469,9 +469,9 @@ class ModelingPipeline:
         )
         feature_report = self.feature_analyzer.generate_feature_analysis_report(X, y)
         
-        # Save model and transformers (use improved_* to match serving defaults)
-        model_path = 'artifacts/improved_final_model.joblib'
-        preprocessor_path = 'artifacts/improved_preprocessor.joblib'
+        # Save model and transformers (canonical names)
+        model_path = 'artifacts/final_model.joblib'
+        preprocessor_path = 'artifacts/preprocessor.joblib'
         transformers_path = 'artifacts/transformers.joblib'
         
         joblib.dump(model, model_path)

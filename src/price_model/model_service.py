@@ -72,8 +72,8 @@ class ModelService:
     def __init__(self, model_path: str = None, 
                  preprocessor_path: str = None,
                  transformers_path: str = None):
-        self.model_path = model_path or os.getenv("MODEL_PATH", "artifacts/improved_final_model.joblib")
-        self.preprocessor_path = preprocessor_path or os.getenv("PREPROCESSOR_PATH", "artifacts/improved_preprocessor.joblib")
+        self.model_path = model_path or os.getenv("MODEL_PATH", "artifacts/final_model.joblib")
+        self.preprocessor_path = preprocessor_path or os.getenv("PREPROCESSOR_PATH", "artifacts/preprocessor.joblib")
         self.transformers_path = transformers_path or os.getenv("TRANSFORMERS_PATH", "artifacts/transformers.joblib")
         self.model = None
         self.preprocessor = None
@@ -84,12 +84,12 @@ class ModelService:
     def load_model(self):
         """Load the trained model, preprocessor, and transformers."""
         try:
-            # Load model with fallback to final_model.joblib if improved is absent
+            # Load model with fallback to improved name for backward compatibility
             if os.path.exists(self.model_path):
                 self.model = joblib.load(self.model_path)
                 print(f"ModelService: Model loaded from {self.model_path}")
             else:
-                fallback_model = "artifacts/final_model.joblib"
+                fallback_model = "artifacts/improved_final_model.joblib"
                 if os.path.exists(fallback_model):
                     self.model = joblib.load(fallback_model)
                     self.model_path = fallback_model
@@ -97,12 +97,12 @@ class ModelService:
                 else:
                     raise FileNotFoundError(f"Model file not found: {self.model_path}")
             
-            # Load preprocessor with fallback to preprocessor.joblib if improved is absent
+            # Load preprocessor with fallback to improved name for backward compatibility
             if os.path.exists(self.preprocessor_path):
                 self.preprocessor = joblib.load(self.preprocessor_path)
                 print(f"ModelService: Preprocessor loaded from {self.preprocessor_path}")
             else:
-                fallback_pre = "artifacts/preprocessor.joblib"
+                fallback_pre = "artifacts/improved_preprocessor.joblib"
                 if os.path.exists(fallback_pre):
                     self.preprocessor = joblib.load(fallback_pre)
                     self.preprocessor_path = fallback_pre

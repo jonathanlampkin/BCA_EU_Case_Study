@@ -16,9 +16,9 @@ properties:
         protocol: TCP
       environmentVariables:
       - name: MODEL_PATH
-        value: "/app/artifacts/improved_final_model.joblib"
+        value: "/app/artifacts/final_model.joblib"
       - name: PREPROCESSOR_PATH
-        value: "/app/artifacts/improved_preprocessor.joblib"
+        value: "/app/artifacts/preprocessor.joblib"
       - name: AZURE_STORAGE_CONNECTION_STRING
         secureValue: "your-storage-connection-string"
       volumeMounts:

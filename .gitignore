@@ -65,8 +65,8 @@ artifacts/*.json
 artifacts/*.txt
 artifacts/*.csv
 artifacts/*.joblib
-!artifacts/improved_final_model.joblib
-!artifacts/improved_preprocessor.joblib
+!artifacts/final_model.joblib
+!artifacts/preprocessor.joblib
 !artifacts/transformers.joblib
 
 # Data files (keep only the original)
