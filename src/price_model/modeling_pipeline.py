@@ -22,6 +22,8 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 import shutil
+import os
+os.environ["TQDM_DISABLE"] = "1"
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -467,9 +469,9 @@ class ModelingPipeline:
         )
         feature_report = self.feature_analyzer.generate_feature_analysis_report(X, y)
         
-        # Save model and transformers
-        model_path = 'artifacts/final_model.joblib'
-        preprocessor_path = 'artifacts/preprocessor.joblib'
+        # Save model and transformers (use improved_* to match serving defaults)
+        model_path = 'artifacts/improved_final_model.joblib'
+        preprocessor_path = 'artifacts/improved_preprocessor.joblib'
         transformers_path = 'artifacts/transformers.joblib'
         
         joblib.dump(model, model_path)

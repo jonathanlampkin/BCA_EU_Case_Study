@@ -84,20 +84,32 @@ class ModelService:
     def load_model(self):
         """Load the trained model, preprocessor, and transformers."""
         try:
-            # Load model
+            # Load model with fallback to final_model.joblib if improved is absent
             if os.path.exists(self.model_path):
                 self.model = joblib.load(self.model_path)
                 print(f"ModelService: Model loaded from {self.model_path}")
             else:
-                raise FileNotFoundError(f"Model file not found: {self.model_path}")
+                fallback_model = "artifacts/final_model.joblib"
+                if os.path.exists(fallback_model):
+                    self.model = joblib.load(fallback_model)
+                    self.model_path = fallback_model
+                    print(f"ModelService: Model loaded from {fallback_model}")
+                else:
+                    raise FileNotFoundError(f"Model file not found: {self.model_path}")
             
-            # Load preprocessor
+            # Load preprocessor with fallback to preprocessor.joblib if improved is absent
             if os.path.exists(self.preprocessor_path):
                 self.preprocessor = joblib.load(self.preprocessor_path)
                 print(f"ModelService: Preprocessor loaded from {self.preprocessor_path}")
             else:
-                print("ModelService: Preprocessor not found, using basic preprocessing")
-                self.preprocessor = None
+                fallback_pre = "artifacts/preprocessor.joblib"
+                if os.path.exists(fallback_pre):
+                    self.preprocessor = joblib.load(fallback_pre)
+                    self.preprocessor_path = fallback_pre
+                    print(f"ModelService: Preprocessor loaded from {fallback_pre}")
+                else:
+                    print("ModelService: Preprocessor not found, using basic preprocessing")
+                    self.preprocessor = None
             
             # Load transformers
             if os.path.exists(self.transformers_path):
