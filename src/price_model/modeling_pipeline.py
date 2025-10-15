@@ -324,6 +324,11 @@ class ModelingPipeline:
         from lightgbm import LGBMRegressor
         from xgboost import XGBRegressor
         import optuna
+        # Reduce optuna log noise
+        try:
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+        except Exception:
+            pass
 
         print(f"\nStarting Bayesian optimization for {model_name} with {n_trials} trials...")
         
@@ -384,7 +389,7 @@ class ModelingPipeline:
             return avg_rmse
 
         study = optuna.create_study(direction='minimize', sampler=optuna.samplers.TPESampler(seed=None))
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         
         print(f"  Best RMSE: {study.best_value:.2f}")
         print(f"  Best params: {study.best_params}")
@@ -450,7 +455,16 @@ class ModelingPipeline:
         
         # Feature analysis
         print("Performing feature analysis...")
-        self.feature_analyzer = FeatureAnalyzer(model, list(X.columns))
+        # Use quieter/faster SHAP settings by default
+        self.feature_analyzer = FeatureAnalyzer(
+            model,
+            list(X.columns),
+            verbose=False,
+            enable_shap_summary=True,
+            enable_shap_waterfall=False,
+            enable_interactions=False,
+            shap_sample_size=300
+        )
         feature_report = self.feature_analyzer.generate_feature_analysis_report(X, y)
         
         # Save model and transformers

@@ -18,13 +18,25 @@ warnings.filterwarnings('ignore')
 
 
 class FeatureAnalyzer:
-    """Comprehensive feature importance analysis with SHAP values."""
+    """Comprehensive feature importance analysis with SHAP values.
     
-    def __init__(self, model, feature_names: List[str]):
+    Defaults are tuned to be quiet and reasonably fast for iterative runs.
+    """
+    
+    def __init__(self, model, feature_names: List[str], *, verbose: bool = False,
+                 enable_shap_summary: bool = True,
+                 enable_shap_waterfall: bool = False,
+                 enable_interactions: bool = False,
+                 shap_sample_size: int = 300):
         self.model = model
         self.feature_names = feature_names
         self.shap_explainer = None
         self.shap_values = None
+        self.verbose = verbose
+        self.enable_shap_summary = enable_shap_summary
+        self.enable_shap_waterfall = enable_shap_waterfall
+        self.enable_interactions = enable_interactions
+        self.shap_sample_size = shap_sample_size
         
     def compute_feature_importance(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
         """Compute feature importance from the trained model."""
@@ -46,7 +58,7 @@ class FeatureAnalyzer:
         
         return importance_dict
     
-    def compute_shap_values(self, X: pd.DataFrame, sample_size: int = 1000) -> np.ndarray:
+    def compute_shap_values(self, X: pd.DataFrame, sample_size: Optional[int] = None) -> np.ndarray:
         """Compute SHAP values for model interpretability.
 
         Performance safeguards:
@@ -55,11 +67,13 @@ class FeatureAnalyzer:
         - Use small, independent masker/background
         - Disable additivity check for speed
         """
-        print("Computing SHAP values...")
+        if self.verbose:
+            print("Computing SHAP values...")
         
         # Sample data for faster computation
-        if len(X) > sample_size:
-            X_sample = X.sample(n=sample_size, random_state=42)
+        eff_sample = sample_size if sample_size is not None else self.shap_sample_size
+        if len(X) > eff_sample:
+            X_sample = X.sample(n=eff_sample, random_state=42)
         else:
             X_sample = X
         
@@ -111,7 +125,8 @@ class FeatureAnalyzer:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
         
-        print(f"Feature importance plot saved to {save_path}")
+        if self.verbose:
+            print(f"Feature importance plot saved to {save_path}")
     
     def create_shap_summary_plot(self, X: pd.DataFrame, save_path: str = "artifacts/shap_summary.png"):
         """Create SHAP summary plot."""
@@ -120,7 +135,8 @@ class FeatureAnalyzer:
         
         # Ensure X and shap_values have the same number of rows
         if len(X) != len(self.shap_values):
-            print(f"Warning: X has {len(X)} rows but SHAP values have {len(self.shap_values)} rows. Using subset.")
+            if self.verbose:
+                print(f"Warning: X has {len(X)} rows but SHAP values have {len(self.shap_values)} rows. Using subset.")
             min_rows = min(len(X), len(self.shap_values))
             X_subset = X.iloc[:min_rows]
             shap_subset = self.shap_values[:min_rows]
@@ -134,7 +150,8 @@ class FeatureAnalyzer:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
         
-        print(f"SHAP summary plot saved to {save_path}")
+        if self.verbose:
+            print(f"SHAP summary plot saved to {save_path}")
     
     def create_shap_waterfall_plot(self, X: pd.DataFrame, instance_idx: int = 0, 
                                  save_path: str = "artifacts/shap_waterfall.png"):
@@ -161,11 +178,13 @@ class FeatureAnalyzer:
             plt.tight_layout()
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.close()
-        except Exception as e:
-            print(f"    Could not create waterfall plot: {e}")
+        except Exception:
+            # Silently skip if waterfall cannot be created on this backend/version
+            pass
             plt.close()
         
-        print(f"SHAP waterfall plot saved to {save_path}")
+        if self.verbose:
+            print(f"SHAP waterfall plot saved to {save_path}")
     
     def analyze_feature_interactions(self, X: pd.DataFrame, top_features: int = 10) -> pd.DataFrame:
         """Analyze feature interactions using SHAP values."""
@@ -207,7 +226,8 @@ class FeatureAnalyzer:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
         
-        print(f"Feature interaction heatmap saved to {save_path}")
+        if self.verbose:
+            print(f"Feature interaction heatmap saved to {save_path}")
     
     def get_feature_importance_ranking(self, importance_dict: Dict[str, float]) -> pd.DataFrame:
         """Get ranked feature importance DataFrame."""
@@ -252,7 +272,8 @@ class FeatureAnalyzer:
     def generate_feature_analysis_report(self, X: pd.DataFrame, y: pd.Series, 
                                        output_dir: str = "artifacts") -> Dict[str, Any]:
         """Generate comprehensive feature analysis report."""
-        print("Generating comprehensive feature analysis report...")
+        if self.verbose:
+            print("Generating comprehensive feature analysis report...")
         
         # Compute feature importance
         importance_dict = self.compute_feature_importance(X, y)
@@ -262,12 +283,16 @@ class FeatureAnalyzer:
         
         # Create visualizations
         self.create_feature_importance_plot(importance_dict, save_path=f"{output_dir}/feature_importance.png")
-        self.create_shap_summary_plot(X, save_path=f"{output_dir}/shap_summary.png")
-        self.create_shap_waterfall_plot(X, save_path=f"{output_dir}/shap_waterfall.png")
+        if self.enable_shap_summary:
+            self.create_shap_summary_plot(X, save_path=f"{output_dir}/shap_summary.png")
+        if self.enable_shap_waterfall:
+            self.create_shap_waterfall_plot(X, save_path=f"{output_dir}/shap_waterfall.png")
         
         # Feature interactions
-        interaction_df = self.analyze_feature_interactions(X)
-        self.create_feature_interaction_heatmap(interaction_df, save_path=f"{output_dir}/feature_interactions.png")
+        interaction_df = None
+        if self.enable_interactions:
+            interaction_df = self.analyze_feature_interactions(X)
+            self.create_feature_interaction_heatmap(interaction_df, save_path=f"{output_dir}/feature_interactions.png")
         
         # Compare feature selection methods
         selection_comparison = self.compare_feature_selection_methods(X, y)
@@ -285,7 +310,7 @@ class FeatureAnalyzer:
             'selection_comparison': selection_comparison,
             'shap_values_computed': self.shap_values is not None,
             'total_features': len(self.feature_names),
-            'interaction_matrix': interaction_df.to_dict()
+            'interaction_matrix': interaction_df.to_dict() if interaction_df is not None else {}
         }
         
         # Save report
@@ -293,6 +318,7 @@ class FeatureAnalyzer:
         with open(f"{output_dir}/feature_analysis_report.json", 'w') as f:
             json.dump(report, f, indent=2, default=str)
         
-        print(f"Feature analysis report saved to {output_dir}/")
+        if self.verbose:
+            print(f"Feature analysis report saved to {output_dir}/")
         
         return report
