@@ -10,9 +10,11 @@ KERNEL_NAME := bca-eu
 ifeq ($(OS),Windows_NT)
   VENV_PY := $(VENV_DIR)/Scripts/python.exe
   VENV_PIP := $(VENV_DIR)/Scripts/pip.exe
+  ACTIVATE_CMD := cmd.exe /k "$(VENV_DIR)\\Scripts\\activate"
 else
   VENV_PY := $(VENV_DIR)/bin/python
   VENV_PIP := $(VENV_DIR)/bin/pip
+  ACTIVATE_CMD := /usr/bin/bash -i -c "source $(VENV_DIR)/bin/activate && exec /usr/bin/bash -i"
 endif
 
 # Pipeline parameters
@@ -21,7 +23,7 @@ N_TRIALS := 30
 VIF_THRESHOLD := 10.0
 CORRELATION_THRESHOLD := 0.80
 
-.PHONY: help preprocess model serve full activate setup-activate register-kernel notebook
+.PHONY: help preprocess model serve full setup
 
 
 help:
@@ -29,11 +31,7 @@ help:
 	@echo "============================="
 	@echo
 	@echo "Available commands:"
-	@echo "  setup        Set up the virtual environment and install deps"
-	@echo "  setup-activate  Setup, then open a subshell with venv activated"
-	@echo "  activate     Open a subshell with the venv activated"
-	@echo "  register-kernel  Register venv as a Jupyter kernel (ipykernel)"
-	@echo "  notebook     Launch Jupyter Lab with the venv interpreter"
+	@echo "  setup        Full setup: venv + deps + kernel + open activated shell"
 	@echo "  preprocess   Clean and preprocess the raw data"
 	@echo "  model        Train and evaluate the models"
 	@echo "  serve        Start the API for predictions"
@@ -45,7 +43,7 @@ help:
 	@echo "- Artifacts (models, reports, outputs): artifacts/"
 
 
-setup: ## Set up the virtual environment and install requirements (cross-platform)
+setup: ## Full setup: create venv, install deps, register Jupyter kernel, open activated shell
 	@echo "Setting up development environment..."
 	@echo "- Creating virtual environment if it doesn't exist"
 	@if [ ! -d "$(VENV_DIR)" ]; then $(PYTHON) -m venv $(VENV_DIR); fi
@@ -54,22 +52,15 @@ setup: ## Set up the virtual environment and install requirements (cross-platfor
 	@"$(VENV_PY)" -m pip install -r requirements.txt -r requirements-dev.txt
 	@echo "Setup complete."
 	@echo
-	@echo "To activate the virtual environment in your current shell, run:"
-	@echo "  source $(VENV_DIR)/bin/activate"
-	@echo "Or run: 'make activate' to open a subshell with the venv activated."
 	@echo "Registering/refreshing Jupyter kernel for this environment..."
 	@"$(VENV_PY)" -m ipykernel install --user --name "$(KERNEL_NAME)" --display-name "Python ($(KERNEL_NAME))" >/dev/null 2>&1 || true
 	@echo "Kernel 'Python ($(KERNEL_NAME))' is available in Jupyter."
+	@echo
+	@echo "Opening an activated shell in this environment..."
+	@$(ACTIVATE_CMD)
 
 
-setup-activate: setup ## Setup then open a subshell with venv activated
-	@echo "Opening a subshell with the virtual environment activated..."
-	@/usr/bin/bash -i -c "source $(VENV_DIR)/bin/activate && exec /usr/bin/bash -i"
-
-
-activate: ## Open a subshell with the virtual environment activated
-	@echo "Opening a subshell with the virtual environment activated..."
-	@/usr/bin/bash -i -c "source $(VENV_DIR)/bin/activate && exec /usr/bin/bash -i"
+ 
 
 
 register-kernel: ## Register this venv as a Jupyter kernel
