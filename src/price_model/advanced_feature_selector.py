@@ -104,11 +104,34 @@ class AdvancedFeatureSelector:
     
     def select_features_by_performance(self, X: pd.DataFrame, y: pd.Series, 
                                      model, min_features: int = 5, max_features: int = 20) -> List[str]:
-        """Select features based on model performance."""
+        """Select features based on model performance.
+        
+        Bounds rationale:
+        - min_features prevents over-pruning that can destabilize cross-validation and degrade generalization.
+        - max_features caps the search space and enforces a target complexity ceiling when starting from many features.
+        Both are configurable by callers; defaults are conservative and can be overridden.
+        """
+        
+        # Sanity and consistency checks for bounds
+        if max_features is not None and min_features is not None and max_features < min_features:
+            # Swap to maintain logical order
+            min_features, max_features = max_features, min_features
+        
         print(f"Selecting features based on performance (min: {min_features}, max: {max_features})...")
         
-        # Start with all features
+        # Start with all features, but enforce max_features cap if applicable
         current_features = list(X.columns)
+        if max_features is not None and len(current_features) > max_features:
+            # Simple pre-trim using univariate f_regression as a fast heuristic
+            try:
+                f_scores, _ = f_regression(X[current_features], y)
+                feature_to_score = dict(zip(current_features, f_scores))
+                current_features = [f for f, _ in sorted(feature_to_score.items(), key=lambda kv: kv[1], reverse=True)[:max_features]]
+                print(f"Pre-trimmed to top {len(current_features)} features by univariate F-score due to max_features cap")
+            except Exception:
+                # If scoring fails (e.g., constant columns), just slice deterministically
+                current_features = current_features[:max_features]
+                print(f"Pre-trimmed to first {len(current_features)} features due to max_features cap")
         best_score = -np.inf
         best_features = current_features.copy()
         
@@ -173,7 +196,14 @@ class AdvancedFeatureSelector:
     
     def comprehensive_feature_selection(self, X: pd.DataFrame, y: pd.Series, 
                                       model, target_features: int = 15) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Comprehensive feature selection pipeline."""
+        """Comprehensive feature selection pipeline.
+        
+        This flow removes multicollinearity, selects a strong candidate set, then
+        refines by performance. The refinement phase uses logical bounds derived
+        from the requested target_features to avoid arbitrary numbers in logs:
+        - max_features := target_features (start from at most this many)
+        - min_features := max(3, ceil(0.5 * target_features)) to prevent over-pruning
+        """
         print("Starting comprehensive feature selection...")
         
         # Step 1: Remove multicollinearity
@@ -184,7 +214,17 @@ class AdvancedFeatureSelector:
         
         # Step 3: Performance-based refinement
         X_selected = X_clean[selected_features]
-        final_features = self.select_features_by_performance(X_selected, y, model)
+        # Derive logical bounds from target_features
+        try:
+            import math
+            derived_min = max(3, int(math.ceil(0.5 * target_features)))
+        except Exception:
+            derived_min = max(3, target_features // 2)
+        derived_max = max(target_features, derived_min)
+        print(f"Refining by performance with bounds -> min: {derived_min}, max: {derived_max}")
+        final_features = self.select_features_by_performance(
+            X_selected, y, model, min_features=derived_min, max_features=derived_max
+        )
         
         # Final dataset
         X_final = X_clean[final_features]

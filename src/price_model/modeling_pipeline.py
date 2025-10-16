@@ -290,6 +290,7 @@ class ModelingPipeline:
         for model_name, model in all_models.items():
             print(f"  Evaluating {model_name}...")
             fold_metrics = []
+            fold_metrics_orig = []
             tscv = TimeSeriesSplit(n_splits=self.cv_folds)
             
             for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
@@ -307,6 +308,17 @@ class ModelingPipeline:
                 fold_metrics.append(metrics)
                 
                 self.tracker.log_metrics({f"{model_name}_fold_{fold}_{k}": v for k, v in metrics.items()})
+
+                # Also compute original-scale metrics if target was transformed
+                try:
+                    y_val_orig = self.inverse_transform_target(y_val.values)
+                    y_pred_orig = self.inverse_transform_target(y_pred)
+                    metrics_orig = self.calculate_metrics(y_val_orig, y_pred_orig)
+                    fold_metrics_orig.append(metrics_orig)
+                    self.tracker.log_metrics({f"{model_name}_fold_{fold}_orig_{k}": v for k, v in metrics_orig.items()})
+                except Exception:
+                    # If inverse-transform not applicable, skip
+                    pass
             
             # Average metrics across folds
             avg_metrics = {k: np.mean([m[k] for m in fold_metrics]) for k in fold_metrics[0]}
@@ -314,11 +326,54 @@ class ModelingPipeline:
             
             self.tracker.log_metrics({f"{model_name}_avg_{k}": v for k, v in avg_metrics.items()})
             print(f"    {model_name} - Avg RMSE: {avg_metrics['rmse']:.2f}")
+            
+            # Average original-scale metrics if available
+            if len(fold_metrics_orig) == len(fold_metrics) and len(fold_metrics_orig) > 0:
+                avg_metrics_orig = {k: np.mean([m[k] for m in fold_metrics_orig]) for k in fold_metrics_orig[0]}
+                # Attach with distinct keys
+                results[-1].update({f"{k}_orig": v for k, v in avg_metrics_orig.items()})
+                self.tracker.log_metrics({f"{model_name}_avg_orig_{k}": v for k, v in avg_metrics_orig.items()})
+                print(f"    {model_name} - Avg RMSE (orig): {avg_metrics_orig['rmse']:.2f}")
         
-        results_df = pd.DataFrame(results).sort_values('rmse').reset_index(drop=True)
-        print("\nModel evaluation complete. Top models by RMSE:")
-        print(results_df[['model', 'rmse', 'r2', 'mae']].head())
+        results_df = pd.DataFrame(results)
+        # Prefer original-scale metrics when available
+        sort_key = 'rmse_orig' if 'rmse_orig' in results_df.columns else 'rmse'
+        results_df = results_df.sort_values(sort_key).reset_index(drop=True)
+        print("\nModel evaluation complete. Top models:")
+        if 'mae_orig' in results_df.columns:
+            display_df = results_df[['model', 'rmse_orig', 'mae_orig', 'r2']].rename(columns={'rmse_orig': 'rmse ($)', 'mae_orig': 'mae ($)'})
+            print(display_df.head())
+        else:
+            print(results_df[['model', 'rmse', 'r2', 'mae']].head())
         
+        # Save a comparison plot (no popups) to artifacts
+        try:
+            os.makedirs('artifacts', exist_ok=True)
+            plt.figure(figsize=(10, 6))
+            # Prefer original-scale metrics if present
+            if 'rmse_orig' in results_df.columns and 'mae_orig' in results_df.columns:
+                rmse_vals = results_df.set_index('model')['rmse_orig']
+                mae_vals = results_df.set_index('model')['mae_orig']
+                plt.title('Model Comparison (Original Scale)')
+            else:
+                rmse_vals = results_df.set_index('model')['rmse']
+                mae_vals = results_df.set_index('model')['mae']
+                plt.title('Model Comparison (Transformed Scale)')
+            x = np.arange(len(rmse_vals))
+            width = 0.35
+            plt.bar(x - width/2, rmse_vals.values, width, label='RMSE')
+            plt.bar(x + width/2, mae_vals.values, width, label='MAE')
+            plt.xticks(x, rmse_vals.index, rotation=30, ha='right')
+            plt.ylabel('Error')
+            plt.legend()
+            plt.tight_layout()
+            out_path = 'artifacts/model_comparison.png'
+            plt.savefig(out_path, dpi=150)
+            plt.close()
+            print(f"Saved model comparison plot to {out_path}")
+        except Exception as e:
+            print(f"Could not save model comparison plot: {e}")
+
         return results_df
 
     def optimize_best_model(self, X: pd.DataFrame, y: pd.Series, model_name: str, n_trials: int = 30) -> Dict[str, Any]:
@@ -441,6 +496,23 @@ class ModelingPipeline:
         print(f"   RMSE Diff:  {rmse_diff:.2f}")
         print(f"   R² Diff:    {r2_diff:.3f}")
 
+        # Also compute original-scale metrics if target was transformed
+        try:
+            y_train_orig = self.inverse_transform_target(y_train.values)
+            y_test_orig = self.inverse_transform_target(y_test.values)
+            train_pred_orig = self.inverse_transform_target(train_pred)
+            test_pred_orig = self.inverse_transform_target(test_pred)
+            train_metrics_orig = self.calculate_metrics(y_train_orig, train_pred_orig)
+            test_metrics_orig = self.calculate_metrics(y_test_orig, test_pred_orig)
+            print("\nTrain/Test Evaluation (Original Scale):")
+            print(f"   Train RMSE (orig): {train_metrics_orig['rmse']:.2f}")
+            print(f"   Test RMSE  (orig): {test_metrics_orig['rmse']:.2f}")
+            print(f"   Train MAE  (orig): {train_metrics_orig['mae']:.2f}")
+            print(f"   Test MAE   (orig): {test_metrics_orig['mae']:.2f}")
+        except Exception:
+            train_metrics_orig = None
+            test_metrics_orig = None
+
         # Determine fit status
         if abs(rmse_diff) > 700 or abs(r2_diff) > 0.1:
             if rmse_diff < 0:
@@ -493,6 +565,8 @@ class ModelingPipeline:
             'model_name': model_name,
             'train_metrics': train_metrics,
             'test_metrics': test_metrics,
+            'train_metrics_orig': train_metrics_orig,
+            'test_metrics_orig': test_metrics_orig,
             'fit_status': fit_status,
             'model_path': model_path,
             'preprocessor_path': preprocessor_path,

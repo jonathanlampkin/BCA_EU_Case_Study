@@ -1,3 +1,31 @@
+## Model Metrics Glossary
+
+The pipeline reports metrics on both the transformed target scale and, when applicable, the original dollar scale. The dictionary below summarizes what each metric means.
+
+```python
+MODEL_METRIC_EXPLANATIONS = {
+    "rmse": "Root Mean Squared Error. Penalizes larger errors more strongly. Lower is better.",
+    "mae": "Mean Absolute Error. Robust, easy to interpret as average absolute error. Lower is better.",
+    "r2": "Coefficient of determination (0–1+). Proportion of variance explained. Higher is better.",
+    "mape": "Mean Absolute Percentage Error (%). Sensitive near zero targets. Lower is better.",
+    "smape": "Symmetric MAPE (0–200%). More stable near zero than MAPE. Lower is better.",
+    "wmape": "Weighted MAPE (%), weights by actuals. Often aligns with business impact. Lower is better.",
+    "mdae": "Median Absolute Error. Very robust to outliers. Lower is better.",
+    "max_error": "Worst absolute error observed. Highlights extreme misses. Lower is better.",
+    "q25_error": "25th percentile of absolute error distribution. Lower is better.",
+    "q75_error": "75th percentile of absolute error distribution. Lower is better.",
+    "q90_error": "90th percentile (tail) of absolute error distribution. Lower is better.",
+    "explained_variance": "Explained variance score (0–1). Similar to R^2 with different normalization. Higher is better.",
+    # Notes:
+    "scale_note": "Metrics may be reported on transformed and original scales. Prefer original-scale (dollars) for business interpretation.",
+}
+```
+
+Quick interpretation tips:
+- Prefer original-scale RMSE/MAE to discuss dollars-of-error; transformed-scale is useful for modeling diagnostics.
+- Use percentiles (q75/q90) to communicate typical vs tail risk of errors.
+- WMAPE is helpful when large-price vehicles should carry more weight in evaluation.
+
 ## BCA EU Case Study – End-to-End ML System Documentation
 
 Author: Jonathan Lampkin
