@@ -117,5 +117,7 @@ serve: ## Start FastAPI service (requires trained artifacts)
 full: ## Run preprocess -> model -> serve
 	$(MAKE) preprocess
 	$(MAKE) model
+	@echo "Generating seaborn comparison charts..."
+	@$(VENV_PY) scripts/plot_model_comparison.py
 	$(MAKE) serve
 	@echo "Done. API running at http://localhost:8000"

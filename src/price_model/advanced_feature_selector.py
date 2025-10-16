@@ -1,6 +1,3 @@
-"""
-Advanced feature selection combining multiple methods for optimal feature subset.
-"""
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Tuple, Optional
@@ -41,8 +38,7 @@ class AdvancedFeatureSelector:
         """Remove features with high correlation."""
         corr_matrix = X.corr().abs()
         upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-        
-        # Find features to drop
+
         to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > self.correlation_threshold)]
         
         for col in to_drop:
