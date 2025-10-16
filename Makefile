@@ -90,8 +90,9 @@ preprocess: ## Clean and preprocess the data
 		print('Null count:', null_count)"
 
 
-model: preprocess ## Run modeling pipeline
+model: ## Run modeling pipeline (requires preprocessed data)
 	@echo "Running comprehensive modeling pipeline..."
+	@test -f data/clean_data.csv || (echo "Missing data/clean_data.csv. Run 'make preprocess' first." && exit 1)
 	@$(VENV_PY) src/price_model/modeling_pipeline.py \
 			--data data/clean_data.csv \
 			--cv-folds $(CV_FOLDS) \
@@ -101,13 +102,20 @@ model: preprocess ## Run modeling pipeline
 	@echo "Modeling pipeline complete!"
 
 # API service
-serve: model ## Start FastAPI service
+serve: ## Start FastAPI service (requires trained artifacts)
 	@echo "Starting FastAPI service..."
 	@echo "API will be available at: http://localhost:8000"
 	@echo "API documentation at: http://localhost:8000/docs"
 	@echo "Upload CSV for batch predictions at: http://localhost:8000/predict/batch"
+	@test -f artifacts/final_model.joblib || (echo "Missing artifacts/final_model.joblib. Run 'make model' first." && exit 1)
+	@test -f artifacts/preprocessor.joblib || (echo "Missing artifacts/preprocessor.joblib. Run 'make model' first." && exit 1)
+	@test -f artifacts/transformers.joblib || (echo "Missing artifacts/transformers.joblib. Run 'make model' first." && exit 1)
 	@$(VENV_PY) src/price_model/model_service.py
 
 # Full pipeline
-full: serve ## Run preprocess -> model -> serve
+
+full: ## Run preprocess -> model -> serve
+	$(MAKE) preprocess
+	$(MAKE) model
+	$(MAKE) serve
 	@echo "Done. API running at http://localhost:8000"
