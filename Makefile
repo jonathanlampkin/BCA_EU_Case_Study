@@ -4,6 +4,7 @@ DATA_PATH := data/EUDS_CaseStudy_Pricing.csv
 ARTIFACTS_DIR := artifacts
 SRC_DIR := src
 VENV_DIR := venv
+KERNEL_NAME := bca-eu
 
 # Cross-platform venv python/pip
 ifeq ($(OS),Windows_NT)
@@ -20,7 +21,7 @@ N_TRIALS := 30
 VIF_THRESHOLD := 10.0
 CORRELATION_THRESHOLD := 0.80
 
-.PHONY: help preprocess model serve full
+.PHONY: help preprocess model serve full activate setup-activate register-kernel notebook
 
 
 help:
@@ -29,6 +30,10 @@ help:
 	@echo
 	@echo "Available commands:"
 	@echo "  setup        Set up the virtual environment and install deps"
+	@echo "  setup-activate  Setup, then open a subshell with venv activated"
+	@echo "  activate     Open a subshell with the venv activated"
+	@echo "  register-kernel  Register venv as a Jupyter kernel (ipykernel)"
+	@echo "  notebook     Launch Jupyter Lab with the venv interpreter"
 	@echo "  preprocess   Clean and preprocess the raw data"
 	@echo "  model        Train and evaluate the models"
 	@echo "  serve        Start the API for predictions"
@@ -48,6 +53,34 @@ setup: ## Set up the virtual environment and install requirements (cross-platfor
 	@"$(VENV_PY)" -m pip install --upgrade pip
 	@"$(VENV_PY)" -m pip install -r requirements.txt -r requirements-dev.txt
 	@echo "Setup complete."
+	@echo
+	@echo "To activate the virtual environment in your current shell, run:"
+	@echo "  source $(VENV_DIR)/bin/activate"
+	@echo "Or run: 'make activate' to open a subshell with the venv activated."
+	@echo "Registering/refreshing Jupyter kernel for this environment..."
+	@"$(VENV_PY)" -m ipykernel install --user --name "$(KERNEL_NAME)" --display-name "Python ($(KERNEL_NAME))" >/dev/null 2>&1 || true
+	@echo "Kernel 'Python ($(KERNEL_NAME))' is available in Jupyter."
+
+
+setup-activate: setup ## Setup then open a subshell with venv activated
+	@echo "Opening a subshell with the virtual environment activated..."
+	@/usr/bin/bash -i -c "source $(VENV_DIR)/bin/activate && exec /usr/bin/bash -i"
+
+
+activate: ## Open a subshell with the virtual environment activated
+	@echo "Opening a subshell with the virtual environment activated..."
+	@/usr/bin/bash -i -c "source $(VENV_DIR)/bin/activate && exec /usr/bin/bash -i"
+
+
+register-kernel: ## Register this venv as a Jupyter kernel
+	@echo "Registering Jupyter kernel for this virtual environment..."
+	@"$(VENV_PY)" -m ipykernel install --user --name "$(KERNEL_NAME)" --display-name "Python ($(KERNEL_NAME))"
+	@echo "Kernel 'Python ($(KERNEL_NAME))' registered. Select it in Jupyter for notebooks."
+
+
+notebook: ## Launch Jupyter Lab using the venv interpreter
+	@echo "Launching Jupyter Lab using the virtual environment..."
+	@"$(VENV_PY)" -m jupyter lab
 
 
 preprocess: ## Clean and preprocess the data

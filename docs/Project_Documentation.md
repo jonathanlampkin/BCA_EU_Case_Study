@@ -17,12 +17,12 @@ Follow these steps to run locally.
   - git clone https://github.com/jonathanlampkin/BCA_EU_Case_Study
   - cd BCA_EU_Case_Study
 
+- Explore available commands:
+  - make help
+
 - Create and activate a Python environment (Python 3.12 recommended):
   - make setup
   - Or manually: python -m venv venv && source venv/bin/activate && pip install -r requirements.txt
-
-- Explore available commands:
-  - make help
 
 - Recommended exploration flow:
   - Review the notebook: notebooks/eda.ipynb
